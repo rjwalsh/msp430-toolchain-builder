@@ -1,0 +1,31 @@
+diff -rNu mspdebug-0.24/Makefile mspdebug-0.24-durables/Makefile
+--- mspdebug-0.24/Makefile	2016-05-13 16:50:59.000000000 -0700
++++ mspdebug-0.24-durables/Makefile	2017-07-23 18:53:31.000000000 -0700
+@@ -20,6 +20,7 @@
+ INSTALL = /usr/bin/install
+ PREFIX ?= /usr/local
+ LDFLAGS ?= -s
++LIBUSB = -lusb
+ 
+ BINDIR = ${PREFIX}/bin/
+ MANDIR = ${PREFIX}/share/man/man1
+@@ -65,6 +66,10 @@
+       ifeq ($(shell fink -V > /dev/null 2>&1 && echo ok),ok)
+ 	PORTS_CFLAGS := $(shell pkg-config --cflags libusb)
+ 	PORTS_LDFLAGS := $(shell pkg-config --libs libusb) -ltermcap -pthread
++      else ifeq ($(shell brew -v > /dev/null 2>&1 && echo ok),ok)
++	PORTS_CFLAGS := $(shell pkg-config --cflags libusb)
++	PORTS_LDFLAGS := $(shell pkg-config --variable=libdir libusb-1.0)/libusb-1.0.a $(shell pkg-config --variable=libdir libusb)/libusb.a -framework CoreFoundation -framework IOKit
++	LIBUSB := 
+       else
+ 	PORTS_CFLAGS := -I/opt/local/include
+ 	PORTS_LDFLAGS := -L/opt/local/lib
+@@ -83,7 +88,7 @@
+ CONFIG_CFLAGS = -DLIB_DIR=\"$(LIBDIR)\"
+ 
+ MSPDEBUG_LDFLAGS = $(LDFLAGS) $(PORTS_LDFLAGS)
+-MSPDEBUG_LIBS = -lusb $(READLINE_LIBS) $(OS_LIBS)
++MSPDEBUG_LIBS = $(LIBUSB) $(READLINE_LIBS) $(OS_LIBS)
+ MSPDEBUG_CFLAGS = $(CFLAGS) $(READLINE_CFLAGS) $(PORTS_CFLAGS)\
+  $(GCC_CFLAGS) $(INCLUDES) $(CONFIG_CFLAGS) $(OS_CFLAGS)
+ 

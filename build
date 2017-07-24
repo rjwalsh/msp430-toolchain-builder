@@ -1,0 +1,231 @@
+#!/Users/rjwalsh/homebrew/bin/python3
+
+import urllib.request
+import tempfile
+import sys
+import os
+
+# Set SW information here
+
+packages = {
+    "binutils": {
+        "version": "2.28",
+        "file": "{name}-{version}.tar.bz2",
+        "location": "http://ftpmirror.gnu.org/{name}"
+    },
+    "gcc": {
+        "version": "6.4.0",
+        "file": "{name}-{version}.tar.gz",
+        "location": "http://ftpmirror.gnu.org/{name}/{name}-{version}"
+    },
+    "gdb": {
+        "version": "8.0",
+        "file": "{name}-{version}.tar.gz",
+        "location": "http://ftpmirror.gnu.org/{name}"
+    },
+    "newlib": {
+        "version": "2.5.0",
+        "file": "{name}-{version}.tar.gz",
+        "location": "ftp://sourceware.org/pub/{name}"
+    },
+    "msp430-gcc-support-files": {
+        "version": "1.198",
+        "file": "{name}-{version}.zip",
+        "location": "http://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSPGCC/latest/exports"
+    },
+    "mspdebug": {
+        "version": "0.24",
+        "file": "v{version}.tar.gz",
+        "location": "https://github.com/dlbeer/mspdebug/archive"
+    },
+}
+
+prefix = "/opt/msp430-durables-{version}"
+
+version = "2017-07-02-00"
+
+parallel = "-j 8"
+
+
+# Nothing changes past here
+
+prefix = prefix.format(version = version)
+
+def download_source(name):
+    version = packages[name]["version"]
+    fname = packages[name]["file"].format(name = name, version = version)
+    location = packages[name]["location"].format(name = name, version = version)
+
+    dest = "third-party-sources/{fname}".format(fname = fname)
+
+    if not os.path.exists(dest):
+        print("{fname} not in cache - downloading".format(fname = fname),
+              flush=True)
+        url = "{location}/{fname}".format(location = location, fname = fname)
+        print("Downloading from {url}".format(url = url), flush=True)
+        urllib.request.urlretrieve(url, dest)
+
+    if not os.path.exists(dest):
+        print("Can't download {fname}".format(fname = fname), flush=True)
+        sys.exit(1)
+
+    return os.path.realpath(dest)
+
+
+def build_binutils():
+    version = packages["binutils"]["version"]
+    source = download_source("binutils")
+    dir = tempfile.mkdtemp()
+
+    print("Building binutils in", dir, flush=True)
+
+    ret = os.system("""
+        cd {dir} && tar xf {source} && cd binutils-{version} && \
+        ./configure --target=msp430-elf --prefix={prefix} && \
+        make {parallel} && sudo make install && cd ..
+        rm -rf {dir}
+        """.format(dir = dir,
+                   source = source,
+                   prefix = prefix,
+                   parallel = parallel,
+                   version = version))
+    if ret != 0:
+        print("binutils build failed", flush=True)
+        sys.exit(1)
+
+
+def build_gdb():
+    version = packages["gdb"]["version"]
+    source = download_source("gdb")
+    dir = tempfile.mkdtemp()
+
+    print("Building gdb in", dir, flush=True)
+
+    ret = os.system("""
+        cd {dir} && tar xf {source} && cd gdb-{version} && \
+        ./configure --target=msp430-elf --prefix={prefix} && \
+        make {parallel} && sudo make install && cd ..
+        rm -rf {dir}
+        """.format(dir = dir,
+                   source = source,
+                   prefix = prefix,
+                   parallel = parallel,
+                   version = version))
+    if ret != 0:
+        print("gdb build failed", flush=True)
+        sys.exit(1)
+
+
+def build_newlib():
+    version = packages["newlib"]["version"]
+    source = download_source("newlib")
+    dir = tempfile.mkdtemp()
+
+    print("Building newlib in", dir, flush=True)
+
+    ret = os.system("""
+        PATH={prefix}/bin:${{PATH}} && cd {dir} && tar xf {source} && \
+        cd newlib-{version} && \
+        ./configure --target=msp430-elf --prefix={prefix} && \
+        make {parallel} all && sudo make install && \
+        cd ..
+        rm -rf {dir}
+        """.format(dir = dir,
+                   source = source,
+                   prefix = prefix,
+                   parallel = parallel,
+                   version = version))
+    if ret != 0:
+        print("newlib build failed", flush=True)
+        sys.exit(1)
+
+
+def build_gcc():
+    version = packages["gcc"]["version"]
+    source = download_source("gcc")
+    dir = tempfile.mkdtemp()
+
+    print("Building gcc in", dir, flush=True)
+
+    ret = os.system("""
+        cd {dir} && tar xf {source} && cd gcc-{version} && \
+        ./contrib/download_prerequisites && mkdir ../build && cd ../build && \
+        ../gcc-{version}/configure --target=msp430-elf --prefix={prefix} --with-newlib --enable-languages=c,c++ && \
+        make {parallel} all-host && sudo make install-host
+        """.format(dir = dir,
+                   source = source,
+                   prefix = prefix,
+                   parallel = parallel,
+                   version = version))
+    if ret != 0:
+        print("gcc host build failed", flush=True)
+        sys.exit(1)
+
+    build_newlib()
+
+    ret = os.system("""
+        cd {dir}/build && make {parallel} all-target && sudo make install-target
+        rm -rf {dir}
+        """.format(dir = dir, parallel = parallel))
+    if ret != 0:
+        print("gcc target build failed", flush=True)
+        sys.exit(1)
+
+
+def build_support():
+    version = packages["msp430-gcc-support-files"]["version"]
+    source = download_source("msp430-gcc-support-files")
+    dir = tempfile.mkdtemp()
+
+    ret = os.system("""
+        cd {dir} && unzip {source} && \
+        sudo mkdir -p {prefix}/msp430-elf/include && \
+        sudo mkdir -p {prefix}/msp430-elf/lib && \
+        sudo cp msp430-gcc-support-files/include/*.h \
+            {prefix}/msp430-elf/include && \
+        sudo cp msp430-gcc-support-files/include/*.ld {prefix}/msp430-elf/lib
+        rm -rf {dir}
+        """.format(dir = dir, source = source, prefix = prefix))
+    if ret != 0:
+        print("support build failed", flush=True)
+        sys.exit(1)
+
+
+def build_mspdebug():
+    version = packages["mspdebug"]["version"]
+    source = download_source("mspdebug")
+    dir = tempfile.mkdtemp()
+
+    print("Building mspdebug in", dir, flush=True)
+
+    patch = "patches/mspdebug-durables.patch"
+    patch = os.path.realpath(patch)
+
+    ret = os.system("""
+        cd {dir} && tar xf {source} && \
+        cd mspdebug-{version} && \
+        patch -p1 < {patch} && \
+        make {parallel} PREFIX={prefix} && \
+        sudo make install PREFIX={prefix} && \
+        cd ..
+        rm -rf {dir}
+        """.format(dir = dir,
+                   source = source,
+                   prefix = prefix,
+                   parallel = parallel,
+                   patch = patch,
+                   version = version))
+    if ret != 0:
+        print("mspdebug build failed", flush=True)
+        sys.exit(1)
+
+ret = os.system("sudo mkdir -p {prefix}".format(prefix = prefix))
+if ret != 0:
+    print("mkdir failed", flush=True)
+    sys.exit(1)
+
+build_binutils()
+build_gcc()
+build_gdb()
+build_support()
+build_mspdebug()
